@@ -1,0 +1,54 @@
+name: Build Native Mac ORT Binary
+
+on:
+  workflow_dispatch:
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dkotest.assertions.multi-line-diff=unified
+
+jobs:
+  setup:
+    runs-on: macOS
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        repository: 'oss-review-toolkit/ort'
+
+    - name: Install Java 11
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+        cache: 'gradle'
+
+  build:
+    needs: setup
+    runs-on: macOS
+
+    steps:
+    - name: Fetch all tags
+      run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+
+    - name: Checkout latest tag
+      run: git checkout $(git describe --tags `git rev-list --tags --max-count=1`)
+
+    - name: Build Ort
+      run: ./gradlew :cli:distTar :helper-cli:distTar
+
+    - name: Get version
+      id: get_version
+      run: |
+        echo "version=$(./gradlew -q properties --property version | sed -nr 's/version: (.+)/\1/p')" >> $GITHUB_ENV
+
+    - name: Create GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.PAT }}
+        ORT_VERSION: ${{ env.version }}
+      run: |
+        gh release create $ORT_VERSION \
+              --repo ${{ github.repository }} \
+              ./cli/build/distributions/ort-$ORT_VERSION.tgz \
+              ./helper-cli/build/distributions/orth-$ORT_VERSION.tgz
+
